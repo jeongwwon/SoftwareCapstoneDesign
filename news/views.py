@@ -5,23 +5,46 @@ from rest_framework import status
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+import os
 import re
 import joblib
 import numpy as np
 import io
 from django.http import HttpResponse
+from konlpy.tag import Okt
+
+# 전역 변수로 파일 로드
+file_path = '/home/ubuntu/filtered_dataset.csv'
+tfidf_vectorizer_path = '/home/ubuntu/tfidf_vectorizer.pkl'
+svm_model_path = '/home/ubuntu/svm_model.joblib'
+
+if os.path.exists(file_path):
+    filtered_dataset_df = pd.read_csv(file_path)
+else:
+    filtered_dataset_df = None
+
+if os.path.exists(tfidf_vectorizer_path):
+    tfidf_vectorizer = joblib.load(tfidf_vectorizer_path)
+else:
+    tfidf_vectorizer = None
+
+if os.path.exists(svm_model_path):
+    svm_model = joblib.load(svm_model_path)
+else:
+    svm_model = None
 
 class HelloAPI(APIView):
     def post(self, request):
         # POST 요청에서 URL을 가져옴
+        okt = Okt()
         url = request.data.get('url')
         
         if not url:
             return Response({"error": "URL이 제공되지 않았습니다."}, status=status.HTTP_400_BAD_REQUEST)
         
         # CSV 파일 경로 설정
-        file_path = '/home/ubuntu/filtered_dataset.csv'
-        filtered_dataset_df = pd.read_csv(file_path)
+        #file_path = '/home/ubuntu/filtered_dataset.csv'
+        #filtered_dataset_df = pd.read_csv(file_path)
         
         # 웹 페이지 가져오기
         response = requests.get(url)
@@ -47,12 +70,58 @@ class HelloAPI(APIView):
         
         # 혐의가 들어간 문장 추출
         sentences = article_text.split('.')
+        def extract_sentence_length(sentence):
+            result = {}
 
-        tfidf_vectorizer_path = '/home/ubuntu/tfidf_vectorizer.pkl'
-        tfidf_vectorizer = joblib.load(tfidf_vectorizer_path)
+            if '무기징역' in sentence:
+                result['징역'] = '무기징역'
+                return result
+            match = re.search(r'징역\s*(\d+)\s*년\s*(\d+)?\s*(월|개월)?', sentence)
+            if match:
+                years = int(match.group(1)) if match.group(1) else 0
+                months = int(match.group(2)) if match.group(2) else 0
+                result['징역'] = years * 12 + months
+            else:
+                match = re.search(r'징역\s*(\d+)\s*(월|개월)', sentence)
+                if match:
+                    result['징역'] = int(match.group(1))
+                match = re.search(r'징역\s*(\d+)\s*년', sentence)
+                if match:
+                    result['징역'] = int(match.group(1)) * 12
+            #집행유예 처리
+            match = re.search(r'집행유예\s*(\d+)\s*년\s*(\d+)?\s*(월|개월)?', sentence)
+            if match:
+                years = int(match.group(1)) if match.group(1) else 0
+                months = int(match.group(2)) if match.group(2) else 0
+                result['집행유예'] = years * 12 + months
+            else:
+                match = re.search(r'집행유예\s*(\d+)\s*(월|개월)', sentence)
+                if match:
+                    result['집행유예'] = int(match.group(1))
+                match = re.search(r'집행유예\s*(\d+)\s*년', sentence)
+                if match:
+                     result['집행유예'] = int(match.group(1)) * 12
+            if result:
+                return result
+            else:
+                return None
+        
+        judge=True
+        newsart={}
+        # 정규 표현식을 사용하여 '징역' 단어 검색
+        if re.search(r'징역',article_text):
+            for sentence in sentences:
+                newsart = extract_sentence_length(sentence)
+                if newsart:  # 징역 관련 정보가 추출되면 종료
+                    break
+        else:
+            judge = False
+            newsart = None
+        #tfidf_vectorizer_path = '/home/ubuntu/tfidf_vectorizer.pkl'
+        #tfidf_vectorizer = joblib.load(tfidf_vectorizer_path)
 
-        svm_model_path = '/home/ubuntu/svm_model.joblib'
-        svm_model = joblib.load(svm_model_path)
+        #svm_model_path = '/home/ubuntu/svm_model.joblib'
+        #svm_model = joblib.load(svm_model_path)
 
         vectorized_sentence = tfidf_vectorizer.transform([span_text])
 
@@ -168,37 +237,66 @@ class HelloAPI(APIView):
 
         total=len(matching_cases)
         # 판결 유형별 빈도 계산
-        total_count = len(matching_cases)
         jail_count = matching_cases['징역'].sum()
         probation_count = matching_cases['집행유예'].sum()
         fine_count = matching_cases['벌금1'].sum()
+        total_count = jail_count + probation_count + fine_count
 
         # 백분율 계산
         jail_percentage = (jail_count / total_count) * 100
         probation_percentage = (probation_count / total_count) * 100
         fine_percentage = (fine_count / total_count) * 100
 
+        percentages = {
+                '징역': jail_percentage,
+                '집행유예': probation_percentage,
+                '벌금': fine_percentage
+                }
+        highest_percentage = max(percentages, key=percentages.get)
+
+
         matching_cases['징역(년)'] = matching_cases['징역(개월)'] / 12
-        if -2 in matching_cases['징역(개월)'].values:
-            highest_sentence = "사형"
-        elif -1 in matching_cases['징역(개월)'].values:
-            highest_sentence = "무기징역"
+        if highest_percentage == '징역':
+            if -2 in matching_cases['징역(개월)'].values:
+                highest_sentence = "사형"
+            elif -1 in matching_cases['징역(개월)'].values:
+                highest_sentence = "무기징역"
+            else:
+                highest_sentence_years = matching_cases['징역(년)'].max()
+                highest_sentence = f"{int(highest_sentence_years)}년"
+            bins = np.arange(0, matching_cases['징역(년)'].max() + 1, 1)
+            hist, bin_edges = np.histogram(matching_cases['징역(년)'], bins=bins)
+            # 가장 높은 빈도의 년도 구간 찾기
+            max_bin_index = np.argmax(hist)
+            max_bin_start = bin_edges[max_bin_index]
+            max_bin_end = bin_edges[max_bin_index + 1]
+            max_bin_count = hist[max_bin_index]
+            max_bin_percentage = int((max_bin_count / jail_count) * 100)
+            result_string = f"{int(max_bin_start)}~{int(max_bin_end)}년"
+        elif highest_percentage == '집행유예':
+            highest_probation_months = matching_cases['집행유예(개월)'].max()
+            highest_sentence = f"{int(highest_probation_months)}개월"
+            bins = np.arange(0, matching_cases['집행유예(개월)'].max() + 1, 1)
+            hist, bin_edges = np.histogram(matching_cases['집행유예(개월)'], bins=bins)
+            # 가장 높은 빈도의 월 구간 찾기
+            max_bin_index = np.argmax(hist)
+            max_bin_start = bin_edges[max_bin_index]
+            max_bin_end = bin_edges[max_bin_index + 1]
+            max_bin_count = hist[max_bin_index]
+            max_bin_percentage = int((max_bin_count / probation_count) * 100)
+            result_string = f"{int(max_bin_start)}~{int(max_bin_end)}개월"
         else:
-            highest_sentence_years = matching_cases['징역(년)'].max()
-            highest_sentence = f"{int(highest_sentence_years)}년"
-
-        bins = np.arange(0, matching_cases['징역(년)'].max() + 1, 1)
-        hist, bin_edges = np.histogram(matching_cases['징역(년)'], bins=bins)
-
-        # 가장 높은 빈도의 년도 구간 찾기
-        max_bin_index = np.argmax(hist)
-        max_bin_start = bin_edges[max_bin_index]
-        max_bin_end = bin_edges[max_bin_index + 1]
-        max_bin_count = hist[max_bin_index]
-
-        total_count = len(matching_cases)
-        max_bin_percentage = int((max_bin_count / total_count) * 100)
-        result_string = f"{int(max_bin_start)}~{int(max_bin_end)}년"
+            highest_fine = matching_cases['벌금'].max()
+            highest_sentence = f"{highest_fine}원"
+            bins = np.arange(0, matching_cases['벌금'].max() + 500000, 500000)
+            hist, bin_edges = np.histogram(matching_cases['벌금'], bins=bins)
+            # 가장 높은 빈도의 벌금 구간 찾기
+            max_bin_index = np.argmax(hist)
+            max_bin_start = bin_edges[max_bin_index]
+            max_bin_end = bin_edges[max_bin_index + 1]
+            max_bin_count = hist[max_bin_index]
+            max_bin_percentage = int((max_bin_count / fine_count) * 100)
+            result_string = f"{int(max_bin_start)}~{int(max_bin_end)}원"
 
 
         jail_mean = matching_cases['징역(개월)'].mean()
@@ -209,28 +307,34 @@ class HelloAPI(APIView):
         # 응답 데이터 구성
         response_data = {
             "prediction": prediction[0],
-            "article_title": span_text,
+            "sentence": corrected_sentence,
+            "judge":judge,
+            "newsart":newsart,
             "total": total,
             "jail_percentage": jail_percentage,
             "probation_percentage": probation_percentage,
             "fine_percentage": fine_percentage,
+            "highest_percentage":highest_percentage,
+            "highest_sentence":highest_sentence,
             "max_bin_percentage": max_bin_percentage,
             "result_string": result_string,
             "jail_mean": jail_mean,
             "probation_mean": probation_mean,
             "fine_mean": fine_mean
         }
+
         csv_buffer = io.StringIO()
         matching_cases.to_csv(csv_buffer, index=False)
         csv_buffer.seek(0)
+        csv_content = csv_buffer.getvalue()
 
-        response = HttpResponse(csv_buffer, content_type='text/csv')
+        response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename=matching_cases.csv'
-        response.write(csv_buffer.getvalue())
+        response.write(csv_content)
 
         return Response({
             "data": response_data,
-            "csv": response.content
+            "csv": csv_content
         }, status=status.HTTP_200_OK)
 
 

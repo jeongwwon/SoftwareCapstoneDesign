@@ -33,6 +33,8 @@ if os.path.exists(svm_model_path):
 else:
     svm_model = None
 
+
+
 class HelloAPI(APIView):
     def post(self, request):
         # POST 요청에서 URL을 가져옴

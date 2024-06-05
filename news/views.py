@@ -128,6 +128,8 @@ class HelloAPI(APIView):
         vectorized_sentence = tfidf_vectorizer.transform([span_text])
 
         prediction = svm_model.predict(vectorized_sentence)
+        if prediction[0]=='마약':
+            prediction[0]='마약류관리에관한법률'
         
         charges = []
         charges2=[]
@@ -212,7 +214,7 @@ class HelloAPI(APIView):
         corrected_sentence = charges2[tindex[max_match_index]].replace('\n', '')
 
         matching_cases = filtered_dataset_df[
-            filtered_dataset_df['사건명'].apply(lambda x: any(word in x for sentence in filtered_split_sentences for word in sentence)) &
+            filtered_dataset_df['사건명'].apply(lambda x: any(word in x for sentence in filtered_nouns_sentences for word in sentence)) &
             (filtered_dataset_df['분류'] == prediction[0])
         ]
 
@@ -307,23 +309,41 @@ class HelloAPI(APIView):
 
 
         # 응답 데이터 구성
-        response_data = {
-            "prediction": prediction[0],
-            "sentence": corrected_sentence,
-            "judge":judge,
-            "newsart":newsart,
-            "total": total,
-            "jail_percentage": jail_percentage,
-            "probation_percentage": probation_percentage,
-            "fine_percentage": fine_percentage,
-            "highest_percentage":highest_percentage,
-            "highest_sentence":highest_sentence,
-            "max_bin_percentage": max_bin_percentage,
-            "result_string": result_string,
-            "jail_mean": jail_mean,
-            "probation_mean": probation_mean,
-            "fine_mean": fine_mean
-        }
+        if judge:
+            response_data = {
+                    "prediction": prediction[0],
+                    "sentence": corrected_sentence,
+                    "judge":judge,
+                    "newsart":newsart,
+                    "total": total,
+                    "jail_percentage": jail_percentage,
+                    "probation_percentage": probation_percentage,
+                    "fine_percentage": fine_percentage,
+                    "highest_percentage":highest_percentage,
+                    "highest_sentence":highest_sentence,
+                    "max_bin_percentage": max_bin_percentage,
+                    "result_string": result_string,
+                    "jail_mean": jail_mean,
+                    "probation_mean": probation_mean,
+                    "fine_mean": fine_mean
+                    }
+        else:
+            response_data = {
+                    "prediction": prediction[0],
+                    "sentence": corrected_sentence,
+                    "judge":judge,
+                    "total": total,
+                    "jail_percentage": jail_percentage,
+                    "probation_percentage": probation_percentage,
+                    "fine_percentage": fine_percentage,
+                    "highest_percentage":highest_percentage,
+                    "highest_sentence":highest_sentence,
+                    "max_bin_percentage": max_bin_percentage,
+                    "result_string": result_string,
+                    "jail_mean": jail_mean,
+                    "probation_mean": probation_mean,
+                    "fine_mean": fine_mean
+                    }
 
         csv_buffer = io.StringIO()
         matching_cases.to_csv(csv_buffer, index=False)

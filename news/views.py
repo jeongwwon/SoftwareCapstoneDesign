@@ -323,9 +323,9 @@ class HelloAPI(APIView):
                     "highest_sentence":highest_sentence,
                     "max_bin_percentage": max_bin_percentage,
                     "result_string": result_string,
-                    "jail_mean": jail_mean,
-                    "probation_mean": probation_mean,
-                    "fine_mean": fine_mean
+                    "jail_count": jail_count,
+                    "probation_count": probation_count,
+                    "fine_count": fine_count
                     }
         else:
             response_data = {
@@ -340,9 +340,9 @@ class HelloAPI(APIView):
                     "highest_sentence":highest_sentence,
                     "max_bin_percentage": max_bin_percentage,
                     "result_string": result_string,
-                    "jail_mean": jail_mean,
-                    "probation_mean": probation_mean,
-                    "fine_mean": fine_mean
+                    "jail_count": jail_count,
+                    "probation_count": probation_count,
+                    "fine_count": fine_count
                     }
 
         csv_buffer = io.StringIO()

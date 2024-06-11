@@ -203,14 +203,60 @@ class HelloAPI(APIView):
 
         corrected_sentence = charges2[tindex[max_match_index]].replace('\n', '')
 
-        try:
-            matching_cases = filtered_dataset_df[
-                filtered_dataset_df['사건명'].apply(lambda x: any(word in x for sentence in filtered_nouns_sentences for word in sentence)) &
-                (filtered_dataset_df['분류'] == prediction[0])
-            ]
-        except Exception as e:
-            return Response({"error": f"데이터셋 필터링 중 오류가 발생했습니다: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        def extract_text_between_markers(text):
+            matches = list(re.finditer(r'(은|는|이|가|에게)', text))
+            if matches:
+                last_match = matches[1]
+                start_idx = last_match.end()
+                end_idx = text.find('혐의', start_idx)
+                if end_idx == -1:
+                    end_idx = len(text)
+                extracted_text = text[start_idx:end_idx].strip()
+                return extracted_text
+            return ""
 
+        correct_charge = extract_text_between_markers(corrected_sentence)
+        charges_before = correct_charge
+        phrases = charges_before.split(',')
+        words = [word.strip() for word in charges_before.split() if word.strip()]
+        results = []
+        for phrase in phrases:
+            if "(" in phrase and ")" in phrase:
+                start = phrase.find('(') + 1
+                end = phrase.find(')')
+                phrase=phrase[start:end]
+            words = [word.strip() for word in phrase.split() if word.strip()]
+            conv = ""
+            for i, word in enumerate(words):
+                origin=conv
+                conv += word
+                if filtered_dataset_df['사건명'].str.contains(conv).any():
+                    if i== len(words)-1:
+                        results.append(conv)
+                        conv=""
+                        break
+                    continue
+                else:
+                    results.append(origin)
+                    conv=""
+                    break
+        from itertools import combinations
+        def generate_two_combinations(results):
+            if len(results) == 1:
+                return results
+            else:
+                two_combinations = list(combinations(results, 2))
+                return two_combinations
+        two_combinations = generate_two_combinations(results)
+        accumulated_results = pd.DataFrame()
+        for combination in two_combinations:
+            mask = (filtered_dataset_df['사건명'].str.contains(combination[0])) & (filtered_dataset_df['사건개수'] <= len(results))
+            for term in combination[1:]:
+                mask &= filtered_dataset_df['사건명'].str.contains(term)
+            filtered_results = filtered_dataset_df[mask]
+            accumulated_results = pd.concat([accumulated_results, filtered_results])
+        accumulated_results = accumulated_results.drop_duplicates().reset_index(drop=True)
+        matching_cases=accumulated_results
         def convert_sentence_to_numeric(value):
             if value == '무기징역':
                 return -1
@@ -290,16 +336,42 @@ class HelloAPI(APIView):
                 result_string = f"{int(max_bin_start)}~{int(max_bin_end)}원"
         except Exception as e:
             return Response({"error": f"판결 유형 처리 중 오류가 발생했습니다: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if highest_sentence=="0년":
+            highest_sentence=str(max(matching_cases['징역(개월)']))+"개월"
 
-        jail_mean = matching_cases['징역(개월)'].mean()
-        probation_mean = matching_cases['집행유예(개월)'].mean()
-        fine_mean = matching_cases['벌금'].mean()
+        drilldown_data = {
+                'series': []
+                }
+        # 징역(년) 데이터 생성
+        jail_bins = np.arange(0, matching_cases['징역(개월)'].max() / 12 + 1, 1)
+        jail_hist, jail_bin_edges = np.histogram(matching_cases['징역(개월)'] / 12, bins=jail_bins)
+        drilldown_data['series'].append({
+            'name': '징역(년)',
+            'id': '징역(년)',
+            'data': [[f"{int(jail_bin_edges[i])}~{int(jail_bin_edges[i + 1])}년", int(jail_hist[i])] for i in range(len(jail_hist))]
+            })
+        # 집행유예(년) 데이터 생성
+        probation_bins = np.arange(0, matching_cases['집행유예(개월)'].max() / 12 + 1, 1)  # 년 단위로 그룹화
+        probation_hist, probation_bin_edges = np.histogram(matching_cases['집행유예(개월)'] / 12, bins=probation_bins)
+        drilldown_data['series'].append({
+            'name': '집행유예(년)',
+            'id': '집행유예(년)',
+            'data': [[f"{int(probation_bin_edges[i])}~{int(probation_bin_edges[i + 1])}년", int(probation_hist[i])] for i in range(len(probation_hist))]
+            })
+        # 벌금 데이터 생성
+        fine_bins = np.arange(0, matching_cases['벌금'].max() + 500000, 500000)
+        fine_hist, fine_bin_edges = np.histogram(matching_cases['벌금'], bins=fine_bins)
+        drilldown_data['series'].append({
+            'name': '벌금',
+            'id': '벌금',
+            'data': [[f"{int(fine_bin_edges[i])}~{int(fine_bin_edges[i + 1])}원", int(fine_hist[i])] for i in range(len(fine_hist))]
+            })
 
         try:
             if judge:
                 response_data = {
                     "prediction": prediction[0],
-                    "sentence": corrected_sentence,
+                    "sentence": results,
                     "judge": judge,
                     "newsart": newsart,
                     "total": total,
@@ -312,12 +384,13 @@ class HelloAPI(APIView):
                     "result_string": result_string,
                     "jail_count": jail_count,
                     "probation_count": probation_count,
-                    "fine_count": fine_count
+                    "fine_count": fine_count,
+                    "drilldown_data":drilldown_data
                 }
             else:
                 response_data = {
                     "prediction": prediction[0],
-                    "sentence": corrected_sentence,
+                    "sentence": results,
                     "judge": judge,
                     "total": total,
                     "jail_percentage": jail_percentage,
@@ -329,20 +402,24 @@ class HelloAPI(APIView):
                     "result_string": result_string,
                     "jail_count": jail_count,
                     "probation_count": probation_count,
-                    "fine_count": fine_count
+                    "fine_count": fine_count,
+                    "drilldown_data":drilldown_data
                 }
 
-            #csv_buffer = io.StringIO()
-            #matching_cases.to_csv(csv_buffer, index=False)
-            #csv_buffer.seek(0)
-            #csv_content = csv_buffer.getvalue()
-
-            #response = HttpResponse(content_type='text/csv')
-            #response['Content-Disposition'] = 'attachment; filename=matching_cases.csv'
-            #response.write(csv_content)
-
+            import json
+            from django.http import JsonResponse
+            selected_columns = matching_cases[['판례정보일련번호', '사건명', '사건번호', '선고일자', '선고', '법원명', '사건종류명', '판결유형', '전문', '판결', '분류']]
+            def truncate_text(text, length=300):
+                if isinstance(text, str):
+                    text = text.replace('\n', '')
+                    return text[:length]
+                return text
+            selected_columns['전문'] = selected_columns['전문'].apply(truncate_text)
+            response_data2 = selected_columns.to_dict(orient='records')
+            
             return Response({
-                "data": response_data
+                "data": response_data,
+                "json":response_data2
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": f"응답 처리 중 오류가 발생했습니다: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -11,7 +11,7 @@ import joblib
 import numpy as np
 import io
 from django.http import HttpResponse
-from konlpy.tag import Mecab
+
 
 # 전역 변수로 파일 로드
 file_path = '/home/ubuntu/filtered_dataset.csv'
@@ -41,7 +41,6 @@ except Exception as e:
 
 class HelloAPI(APIView):
     def post(self, request):
-        mecab = Mecab()
         url = request.data.get('url')
         
         if not url:
@@ -124,6 +123,8 @@ class HelloAPI(APIView):
             prediction = svm_model.predict(vectorized_sentence)
             if prediction[0] == '마약':
                 prediction[0] = '마약류관리에관한법률'
+            if prediction[0]=='뇌물수수':
+                prediction[0]='횡령'
         except Exception as e:
             return Response({"error": f"모델 예측 중 오류가 발생했습니다: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -134,11 +135,22 @@ class HelloAPI(APIView):
 
         for sentence in sentences:
             if '혐의' in sentence:
+                real=""
                 charges2.append(sentence)
                 sentence = sentence.strip()
+                혐의_idx = sentence.find('혐의')
+                if len(sentence) > 혐의_idx + 1 and sentence[혐의_idx + 2] == '(':
+                    start = sentence.find('(', 혐의_idx)
+                    end = sentence.find(')', start)
+                    real=sentence[start+1:end].strip()
+
                 if re.search(r'(에게|[은는이가])', sentence):
                     end_idx = sentence.index('혐의')
-                    charges.append(sentence[:end_idx])
+                    if real:
+                        charges.append(sentence[:end_idx] + ' ' + real)
+                        real=False
+                    else:
+                        charges.append(sentence[:end_idx])
 
         charges_before = []
         original_sentences = []
@@ -167,7 +179,86 @@ class HelloAPI(APIView):
                 tindex.append(tvalue - 1)
                 charges_before.append(extracted_sentence)
                 original_sentences.append(sentence)
-
+            keywords = {
+                "살인":{"살인"},
+                "절도":{"절도","불법사용","침입절도"},
+                "장물":{"장물"},
+                "사기":{"사기","컴퓨터등사용사기","부당이득","편의시설부정이용","전기통신금융사기","보험사기"},
+                "횡령":{"횡령"},
+                "배임":{"배임"},
+                "도로교통법":{"운전","도로","도주치상","위험운전치상"},
+                "손괴":{"손괴"},
+                "강도":{"강도"},
+                "방화":{"방화"},
+                "성폭력":{"성폭력","강간","특수강도강간","카메라등이용촬영","공중밀집에서의추행","음란물"},
+                "폭행":{"폭행","폭력행위"},
+                "상해":{"상해"},
+                "협박":{"협박"},
+                "공갈":{"공갈"},
+                "약취/유인":{"약취","유인","부녀매매","국외이송"},
+                "체포/감금":{"체포","감금"},
+                "위조범죄":{"통화","유가","인지","우표","문서","인장"},
+                "공무원범죄":{"직무","직권","수뢰","증뢰"},
+                "도박":{"도박","복표"},
+                "과실범죄":{"과실","실화"},
+                "명예":{"명예"},
+                "권리행사방해":{"권리행사방해"},
+                "주거침입":{"주거침입"},
+                "비밀침해":{"비밀침해"},
+                "유기":{"유기"},
+                "교통방해":{"교통방해"},
+                "도주/범죄은닉":{"도주","은닉"},
+                "위증과증거인멸":{"위증","증거인멸"},
+                "무고":{"무고"},
+                "가정폭력":{"가정폭력"},
+                "개인정보보호법":{"개인정보"},
+                "건설":{"건설","건축"},
+                "게임산업진흥법":{"게임"},
+                "고용보험법":{"고용보험"},
+                "공유수면관리":{"공유수면"},
+                "공인중개사법":{"공인중개"},
+                "공중위생법":{"공중위생"},
+                "공직선거법":{"공직선거"},
+                "관세법":{"관세"},
+                "교통사고처리특례법":{"교통사고"},
+                "국가기술자격법":{"국가기술자격"},
+                "국가보안법":{"국가보안"},
+                "국민체육진흥법":{"국민체육"},
+                "근로기준법":{"근로","퇴직","급여"},
+                "노동조합":{"노동"},
+                "농수산물":{"농수산물"},
+                "도시및주거환경":{"도시","주거환경"},
+                "공정거래법":{"독점","공정거래"},
+                "마약류관리에관한법률":{"마약"},
+                "변호사법":{"변호사"},
+                "병역법":{"병역"},
+                "부동산":{"부동산"},
+                "부정경쟁방지및영업비밀보호":{"부정경쟁","영업비밀"},
+                "부정수표":{"부정수표"},
+                "사해행위":{"사해행위"},
+                "산업안전보건법":{"산업안전"},
+                "산지관리법":{"산지"},
+                "상표법":{"상표"},
+                "선박":{"선박"},
+                "성매매알선":{"성매매"},
+                "식품위생법":{"식품위생"},
+                "아동˙청소년":{"아동·청소년의성보호","아동"},
+                "약사법":{"약사법"},
+                "외국환거래법":{"외국환"},
+                "의료법":{"의료"},
+                "자동차":{"자동차"},
+                "자본시장과금융투자업":{"자본시장","금융투자"},
+                "저작권법":{"저작권"},
+                "전자금융거래법":{"전자금융"},
+                "정보통신망":{"정보통신망"},
+                "조세범처벌법":{"조세범"},
+                "주민등록법":{"주민등록법"},
+                "주택법":{"주택"},
+                "집회및시위":{"집회","시위"},
+                "총포·도검·화약류단속":{"총포","도검","화약류"},
+                "특허법":{"특허"},
+                "폐기물관리법":{"폐기물"}
+            }
         corrected_charges_before = []
         for original, extracted in zip(original_sentences, charges_before):
             start_idx = original.find(extracted[:2])
@@ -182,26 +273,19 @@ class HelloAPI(APIView):
             words = re.split(r'[ ,\(\)·]', sentence)
             split_sentences.append([word for word in words if word])
 
-        filtered_split_sentences = [[word for word in sentence if len(word) > 1] for sentence in split_sentences]
-
-        filtered_nouns_sentences = []
-        for sentence in filtered_split_sentences:
-            nouns = []
-            for word in sentence:
-                nouns += [noun for noun in mecab.nouns(word)]
-            filtered_nouns_sentences.append(nouns)
-        filtered_nouns_sentences = [[word for word in sentence if len(word) > 1] for sentence in filtered_nouns_sentences]
+        
 
         matche = []
-        for lis in filtered_nouns_sentences:
+        for lis in split_sentences:
             a = 0
             for words in lis:
-                if filtered_dataset_df['사건명'].str.contains(words).any():
-                    a += 1
+                for words2 in keywords[prediction[0]]:
+                    if words==words2:
+                        a += 1
             matche.append(a)
         max_match_index = matche.index(max(matche))
 
-        corrected_sentence = charges2[tindex[max_match_index]].replace('\n', '')
+        corrected_sentence = charges2[max_match_index].replace('\n','')
 
         def extract_text_between_markers(text):
             matches = list(re.finditer(r'(은|는|이|가|에게)', text))
@@ -209,22 +293,35 @@ class HelloAPI(APIView):
                 last_match = matches[1]
                 start_idx = last_match.end()
                 end_idx = text.find('혐의', start_idx)
+                혐의_idx = text.find('혐의', start_idx)
+                real=""
+                if 혐의_idx != -1 and len(text) > 혐의_idx + 1 and text[혐의_idx + 2] == '(':
+                    start = text.find('(', 혐의_idx)
+                    end = text.find(')', start)
+                    if end != -1:
+                        real = text[start + 1:end].strip()
+                end_idx = text.find('혐의', start_idx)
                 if end_idx == -1:
                     end_idx = len(text)
-                extracted_text = text[start_idx:end_idx].strip()
+                if real:
+                    extracted_text = text[start_idx:end_idx].strip() + ' ' + real
+                else:
+                    extracted_text = text[start_idx:end_idx].strip()
                 return extracted_text
             return ""
 
         correct_charge = extract_text_between_markers(corrected_sentence)
         charges_before = correct_charge
         phrases = charges_before.split(',')
-        words = [word.strip() for word in charges_before.split() if word.strip()]
+        
         results = []
         for phrase in phrases:
             if "(" in phrase and ")" in phrase:
                 start = phrase.find('(') + 1
                 end = phrase.find(')')
                 phrase=phrase[start:end]
+                results.append(phrase)
+                continue
             words = [word.strip() for word in phrase.split() if word.strip()]
             conv = ""
             for i, word in enumerate(words):
@@ -240,23 +337,14 @@ class HelloAPI(APIView):
                     results.append(origin)
                     conv=""
                     break
-        from itertools import combinations
-        def generate_two_combinations(results):
-            if len(results) == 1:
-                return results
-            else:
-                two_combinations = list(combinations(results, 2))
-                return two_combinations
-        two_combinations = generate_two_combinations(results)
-        accumulated_results = pd.DataFrame()
-        for combination in two_combinations:
-            mask = (filtered_dataset_df['사건명'].str.contains(combination[0])) & (filtered_dataset_df['사건개수'] <= len(results))
-            for term in combination[1:]:
-                mask &= filtered_dataset_df['사건명'].str.contains(term)
-            filtered_results = filtered_dataset_df[mask]
-            accumulated_results = pd.concat([accumulated_results, filtered_results])
-        accumulated_results = accumulated_results.drop_duplicates().reset_index(drop=True)
-        matching_cases=accumulated_results
+        filtered_cases = filtered_dataset_df[filtered_dataset_df['분류'] == prediction[0]]
+        len_results = len(results)
+        final_filtered_cases = filtered_cases[
+                filtered_cases['사건명'].apply(lambda x: any(word in x for word in results)) &
+                (filtered_cases['사건개수'] <= len_results)
+                ]
+        matching_cases=final_filtered_cases
+
         def convert_sentence_to_numeric(value):
             if value == '무기징역':
                 return -1
@@ -310,7 +398,7 @@ class HelloAPI(APIView):
                 max_bin_start = bin_edges[max_bin_index]
                 max_bin_end = bin_edges[max_bin_index + 1]
                 max_bin_count = hist[max_bin_index]
-                max_bin_percentage = int((max_bin_count / jail_count) * 100)
+                max_bin_percentage = int((max_bin_count / total_count) * 100)
                 result_string = f"{int(max_bin_start)}~{int(max_bin_end)}년"
             elif highest_percentage == '집행유예':
                 highest_probation_months = matching_cases['집행유예(개월)'].max()
@@ -321,7 +409,7 @@ class HelloAPI(APIView):
                 max_bin_start = bin_edges[max_bin_index]
                 max_bin_end = bin_edges[max_bin_index + 1]
                 max_bin_count = hist[max_bin_index]
-                max_bin_percentage = int((max_bin_count / probation_count) * 100)
+                max_bin_percentage = int((max_bin_count / total_count) * 100)
                 result_string = f"{int(max_bin_start)}~{int(max_bin_end)}개월"
             else:
                 highest_fine = matching_cases['벌금'].max()
@@ -332,7 +420,7 @@ class HelloAPI(APIView):
                 max_bin_start = bin_edges[max_bin_index]
                 max_bin_end = bin_edges[max_bin_index + 1]
                 max_bin_count = hist[max_bin_index]
-                max_bin_percentage = int((max_bin_count / fine_count) * 100)
+                max_bin_percentage = int((max_bin_count / total_count) * 100)
                 result_string = f"{int(max_bin_start)}~{int(max_bin_end)}원"
         except Exception as e:
             return Response({"error": f"판결 유형 처리 중 오류가 발생했습니다: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -344,7 +432,7 @@ class HelloAPI(APIView):
                 }
         # 징역(년) 데이터 생성
         jail_bins = np.arange(0, matching_cases['징역(개월)'].max() / 12 + 1, 1)
-        jail_hist, jail_bin_edges = np.histogram(matching_cases['징역(개월)'] / 12, bins=jail_bins)
+        jail_hist, jail_bin_edges = np.histogram(matching_cases[matching_cases['징역'] == 1]['징역(년)'], bins=jail_bins)
         drilldown_data['series'].append({
             'name': '징역(년)',
             'id': '징역(년)',
@@ -352,7 +440,7 @@ class HelloAPI(APIView):
             })
         # 집행유예(년) 데이터 생성
         probation_bins = np.arange(0, matching_cases['집행유예(개월)'].max() / 12 + 1, 1)  # 년 단위로 그룹화
-        probation_hist, probation_bin_edges = np.histogram(matching_cases['집행유예(개월)'] / 12, bins=probation_bins)
+        probation_hist, probation_bin_edges = np.histogram(matching_cases[matching_cases['집행유예'] == 1]['집행유예(개월)'] / 12, bins=probation_bins)
         drilldown_data['series'].append({
             'name': '집행유예(년)',
             'id': '집행유예(년)',
@@ -360,7 +448,7 @@ class HelloAPI(APIView):
             })
         # 벌금 데이터 생성
         fine_bins = np.arange(0, matching_cases['벌금'].max() + 500000, 500000)
-        fine_hist, fine_bin_edges = np.histogram(matching_cases['벌금'], bins=fine_bins)
+        fine_hist, fine_bin_edges = np.histogram(matching_cases[matching_cases['벌금1'] == 1]['벌금'], bins=fine_bins)
         drilldown_data['series'].append({
             'name': '벌금',
             'id': '벌금',

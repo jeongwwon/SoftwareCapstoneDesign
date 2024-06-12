@@ -290,7 +290,7 @@ class HelloAPI(APIView):
         def extract_text_between_markers(text):
             matches = list(re.finditer(r'(은|는|이|가|에게)', text))
             if matches:
-                last_match = matches[1]
+                last_match = matches[0]
                 start_idx = last_match.end()
                 end_idx = text.find('혐의', start_idx)
                 혐의_idx = text.find('혐의', start_idx)
@@ -399,7 +399,7 @@ class HelloAPI(APIView):
                 max_bin_end = bin_edges[max_bin_index + 1]
                 max_bin_count = hist[max_bin_index]
                 max_bin_percentage = int((max_bin_count / total_count) * 100)
-                result_string = f"{int(max_bin_start)}~{int(max_bin_end)}년"
+                #result_string = f"{int(max_bin_start)}~{int(max_bin_end)}년"
             elif highest_percentage == '집행유예':
                 highest_probation_months = matching_cases['집행유예(개월)'].max()
                 highest_sentence = f"{int(highest_probation_months)}개월"
@@ -410,7 +410,7 @@ class HelloAPI(APIView):
                 max_bin_end = bin_edges[max_bin_index + 1]
                 max_bin_count = hist[max_bin_index]
                 max_bin_percentage = int((max_bin_count / total_count) * 100)
-                result_string = f"{int(max_bin_start)}~{int(max_bin_end)}개월"
+                #result_string = f"{int(max_bin_start)}~{int(max_bin_end)}개월"
             else:
                 highest_fine = matching_cases['벌금'].max()
                 highest_sentence = f"{highest_fine}원"
@@ -421,7 +421,7 @@ class HelloAPI(APIView):
                 max_bin_end = bin_edges[max_bin_index + 1]
                 max_bin_count = hist[max_bin_index]
                 max_bin_percentage = int((max_bin_count / total_count) * 100)
-                result_string = f"{int(max_bin_start)}~{int(max_bin_end)}원"
+                #result_string = f"{int(max_bin_start)}~{int(max_bin_end)}원"
         except Exception as e:
             return Response({"error": f"판결 유형 처리 중 오류가 발생했습니다: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         if highest_sentence=="0년":
@@ -454,6 +454,15 @@ class HelloAPI(APIView):
             'id': '벌금',
             'data': [[f"{int(fine_bin_edges[i])}~{int(fine_bin_edges[i + 1])}원", int(fine_hist[i])] for i in range(len(fine_hist))]
             })
+        if highest_percentage == '징역':
+            max_bin_index = np.argmax(jail_hist)
+            result_string = f"{int(jail_bin_edges[max_bin_index])}~{int(jail_bin_edges[max_bin_index + 1])}년"
+        elif highest_percentage == '집행유예':
+            max_bin_index = np.argmax(probation_hist)
+            result_string = f"{int(probation_bin_edges[max_bin_index])}~{int(probation_bin_edges[max_bin_index + 1])}년"
+        else:
+            max_bin_index = np.argmax(fine_hist)
+            result_string = f"{int(fine_bin_edges[max_bin_index])}~{int(fine_bin_edges[max_bin_index + 1])}원"
 
         try:
             if judge:
@@ -496,7 +505,7 @@ class HelloAPI(APIView):
 
             import json
             from django.http import JsonResponse
-            selected_columns = matching_cases[['판례정보일련번호', '사건명', '사건번호', '선고일자', '선고', '법원명', '사건종류명', '판결유형', '전문', '판결', '분류']]
+            selected_columns = matching_cases[['판례정보일련번호', '사건명', '사건번호', '선고일자', '선고', '법원명', '사건종류명', '판결유형', '전문', '판결', '분류','징역(개월)','집행유예(개월)','벌금']]            
             def truncate_text(text, length=300):
                 if isinstance(text, str):
                     text = text.replace('\n', '')

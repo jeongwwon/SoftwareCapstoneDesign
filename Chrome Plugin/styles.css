@@ -1,0 +1,18 @@
+.flex-container {
+    display: flex;
+    align-items: center;
+}
+
+h3 {
+    margin: 0; /* 기본 여백 제거 */
+}
+
+table {
+    width: 30%; /* 원하는 너비로 조정 */
+}
+
+th, td {
+    padding: 8px; /* 셀 안의 여백 조정 */
+    text-align: center; /* 가운데 정렬 */
+    font-weight: bold;
+}

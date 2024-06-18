@@ -1,0 +1,21 @@
+{
+    "name": "사건·사고 뉴스 분석",
+    "version": "3.0",
+    "description": "유사 사건 형량 분석",
+    "manifest_version": 3,
+    "permissions": [
+        "activeTab",
+        "storage",
+        "tabs"
+    ],
+    "action": {
+        "default_popup": "popup.html"
+    },
+    "content_scripts": [
+        {
+            "matches": ["<all_urls>"],
+            "js": ["content.js"]
+        }
+    ]
+    
+}

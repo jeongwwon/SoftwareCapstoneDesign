@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@1.*/css/pico.min.css" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta charset="UTF-8">
+    <title>뉴스 분석</title>
+    <style>
+        #image {
+            width: 500px; /* 너비를 800픽셀로 설정 */
+            height: 350px; /* 높이를 600픽셀로 설정 */
+        }
+        details p {
+            text-align: center; /* 텍스트를 중앙 정렬합니다 */
+            margin-left: -20px; 
+            font-weight: bold;
+        }
+        body {
+            margin: auto; /* 가운데 정렬 */
+            flex-direction: column;
+        }
+        p {
+            font-weight: bold; /* 폰트를 두껍게 만듭니다 */
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgb(0,0,0);
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            margin-top: 100px;
+            border: 1px solid #888;
+            width: 100%;
+            align-items: center;
+            display: flex;
+            flex-direction: column;
+        }
+        .close {
+            width: 400px;
+            font-size: 25px;
+            font-weight: bold;
+        }
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        table {
+            width: 100%;
+            max-width: 1900px;
+            text-align: center;
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            word-wrap: break-word;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        #loading {
+            justify-content: center;
+            align-items: center;
+            margin-top: 400px;
+            text-align: center;
+            font-size: 2.5em; /* 크기를 키움 */
+            font-weight: bold; /* 글자 두껍게 */
+        }
+    </style>
+    <script src="fetchAndUpdateData.js"></script>
+</head>
+<body>
+    <article id="loading" aria-busy="true">분석중</article>
+    <div id="content" class="hidden">
+        <h1 id="title" style="margin-top: 50px; text-align: center;">뉴스 분석</h1>
+        <div class="grid" style="margin-right: 400px;">
+            <div style="margin-left: 100px;"><img id="image" alt="News Image"></div>
+            <div>   
+                <details open style="margin-top: -20px;">
+                    <summary role="button" class="contrast" style="text-align: center;">사건 대분류</summary>
+                    <p id="prediction">Loading...</p>
+                </details>
+                <details open style="margin-top: -30px;">
+                    <summary role="button" style="text-align: center;">혐의</summary>
+                    <p id="sentence">Loading...</p>
+                </details>
+                <details open style="margin-top: -30px;">
+                    <summary role="button" class="outline contrast" style="text-align: center;">판결</summary>
+                    <p id="judge">Loading...</p>
+                </details>
+            </div>
+            <div style="text-align: center; margin-top: 80px; margin-left: 100px; width: 800px;">
+                <article id="conclusion" style="font-size: 25px;">
+                    준비중
+                </article>
+                <button class="secondary" id="similarCasesButton" style="display: block; width:200px;margin: 20px auto;">유사 사건 확인</button>
+            </div>
+        </div>
+        <br><br>
+        <div style="display: flex;margin-top: -80px;margin-left: 200px;">
+            <div id="container1" class="chart" style="margin-left:40px"></div>
+            <div id="container2" class="chart" style="margin-left:40px;width: 1000px;margin-left: 200px;"></div>
+        </div>
+        <div id="myModal" class="modal">
+            <div class="modal-content">
+                <table>
+                    <thead>
+                      <tr>
+                        <th scope="col">판례정보일련번호</th>
+                        <th scope="col">사건명</th>
+                        <th scope="col">사건번호</th>
+                        <th scope="col">선고일자</th>
+                        <th scope="col">선고</th>
+                        <th scope="col">법원명</th>
+                        <th scope="col">사건종류명</th>
+                        <th scope="col">판결유형</th>
+                        <th scope="col">전문</th>
+                        <th scope="col">판결</th>
+                        <th scope="col">분류</th>
+                        <th scope="col">징역(개월)</th>
+                        <th scope="col">집행유예(개월)</th>
+                        <th scope="col">벌금</th>
+                      </tr>
+                    </thead>
+                    <tbody id="modalTableBody">
+                      <!-- 데이터가 동적으로 추가될 것입니다. -->
+                    </tbody>
+                  </table>
+                  <button class="close">확인</button>
+            </div>
+        </div>
+    </div>
+    <script src="node_modules/highcharts/highcharts.js"></script>
+    <script src="node_modules/highcharts/modules/series-label.js"></script>
+    <script src="node_modules/highcharts/modules/exporting.js"></script>
+    <script src="node_modules/highcharts/modules/drilldown.js"></script>
+    <script src="node_modules/highcharts/modules/export-data.js"></script>
+    <script src="node_modules/highcharts/modules/accessibility.js"></script>
+    <script src="prison.js"></script>
+    <script src="judgment.js"></script>
+    <script src="fullscreen.js"></script>
+    <script src="modal.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "chart.js": "^4.4.2",
+    "express-csp-header": "^5.2.1",
+    "highcharts": "^11.4.1"
+  }
+}

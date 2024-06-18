@@ -11,6 +11,7 @@ import joblib
 import numpy as np
 import io
 from django.http import HttpResponse
+from konlpy.tag import Mecab
 
 
 # 전역 변수로 파일 로드
@@ -41,8 +42,8 @@ except Exception as e:
 
 class HelloAPI(APIView):
     def post(self, request):
+        mecab = Mecab()
         url = request.data.get('url')
-        
         if not url:
             return Response({"error": "URL이 제공되지 않았습니다."}, status=status.HTTP_400_BAD_REQUEST)
         
@@ -132,7 +133,7 @@ class HelloAPI(APIView):
         charges2 = []
         tvalue = 0
         tindex = []
-
+        reall=[]
         for sentence in sentences:
             if '혐의' in sentence:
                 real=""
@@ -143,7 +144,7 @@ class HelloAPI(APIView):
                     start = sentence.find('(', 혐의_idx)
                     end = sentence.find(')', start)
                     real=sentence[start+1:end].strip()
-
+                    reall.append(real)
                 if re.search(r'(에게|[은는이가])', sentence):
                     end_idx = sentence.index('혐의')
                     if real:
@@ -287,30 +288,49 @@ class HelloAPI(APIView):
 
         corrected_sentence = charges2[max_match_index].replace('\n','')
 
-        def extract_text_between_markers(text):
-            matches = list(re.finditer(r'(은|는|이|가|에게)', text))
-            if matches:
-                last_match = matches[0]
-                start_idx = last_match.end()
-                end_idx = text.find('혐의', start_idx)
-                혐의_idx = text.find('혐의', start_idx)
-                real=""
-                if 혐의_idx != -1 and len(text) > 혐의_idx + 1 and text[혐의_idx + 2] == '(':
-                    start = text.find('(', 혐의_idx)
-                    end = text.find(')', start)
-                    if end != -1:
-                        real = text[start + 1:end].strip()
-                end_idx = text.find('혐의', start_idx)
-                if end_idx == -1:
-                    end_idx = len(text)
-                if real:
-                    extracted_text = text[start_idx:end_idx].strip() + ' ' + real
-                else:
-                    extracted_text = text[start_idx:end_idx].strip()
-                return extracted_text
-            return ""
+        def extract_text_after_first_josa(text):
+            tokens = mecab.pos(text)
+            josa_indices = [i for i, token in enumerate(tokens) if 'J' in token[1]]
+            if josa_indices:
+                first_josa_idx = josa_indices[0]
+                first_josa_token = tokens[first_josa_idx][0]
+                cumulative_length = 0
+                first_josa_position = -1
+                for i, (token, pos) in enumerate(tokens):
+                    token_position = text[cumulative_length:].find(token) + cumulative_length
+                    if i == first_josa_idx:
+                        first_josa_position = token_position
+                        break
+                    cumulative_length = token_position + len(token)
+                if first_josa_position != -1:
+                    start_idx = first_josa_position + len(first_josa_token)
+                    혐의_idx = text.find('혐의', start_idx)
+                    real = ""
+                    if 혐의_idx != -1 and len(text) > 혐의_idx + 1 and text[혐의_idx + 1] == '(':
+                        start = text.find('(', 혐의_idx)
+                        end = text.find(')', start)
+                        if end != -1:
+                            real = text[start + 1:end].strip()
+                    if 혐의_idx != -1:
+                        end_idx = 혐의_idx
+                    else:
+                        end_idx = len(text)  # "혐의"가 없으면 텍스트의 끝까지 추출
+                    if real:
+                        extracted_text = text[start_idx:end_idx].strip() + ' ' + real
+                    else:
+                        extracted_text = text[start_idx:end_idx].strip()
+                    return extracted_text
+                return ""
 
-        correct_charge = extract_text_between_markers(corrected_sentence)
+        correct_charge = extract_text_after_first_josa(corrected_sentence)
+        if reall:
+            correct_charge=reall[0]
+        def extract_text_without_josa(word):
+            tokens = mecab.pos(word)
+            filtered_tokens = [token for token, pos in tokens if 'J' not in pos]
+            filtered_text = ''.join([token for token in filtered_tokens])
+            return filtered_text
+
         charges_before = correct_charge
         phrases = charges_before.split(',')
         
@@ -319,12 +339,15 @@ class HelloAPI(APIView):
             if "(" in phrase and ")" in phrase:
                 start = phrase.find('(') + 1
                 end = phrase.find(')')
-                phrase=phrase[start:end]
-                results.append(phrase)
-                continue
+                phrase2=phrase[start:end]
+                results.append(phrase2)
             words = [word.strip() for word in phrase.split() if word.strip()]
             conv = ""
             for i, word in enumerate(words):
+                word = extract_text_without_josa(word)
+                if "("in word:
+                    results.append(conv)
+                    break
                 origin=conv
                 conv += word
                 if filtered_dataset_df['사건명'].str.contains(conv).any():
@@ -334,13 +357,16 @@ class HelloAPI(APIView):
                         break
                     continue
                 else:
+                    if not origin:
+                        conv=""
+                        continue
                     results.append(origin)
                     conv=""
                     break
-        filtered_cases = filtered_dataset_df[filtered_dataset_df['분류'] == prediction[0]]
+        filtered_cases = filtered_dataset_df
         len_results = len(results)
         final_filtered_cases = filtered_cases[
-                filtered_cases['사건명'].apply(lambda x: any(word in x for word in results)) &
+                filtered_cases['사건명'].apply(lambda x: all(word in x for word in results)) &
                 (filtered_cases['사건개수'] <= len_results)
                 ]
         matching_cases=final_filtered_cases
@@ -414,7 +440,7 @@ class HelloAPI(APIView):
             else:
                 highest_fine = matching_cases['벌금'].max()
                 highest_sentence = f"{highest_fine}원"
-                bins = np.arange(0, matching_cases['벌금'].max() + 500000, 500000)
+                bins = np.arange(0, matching_cases['벌금'].max() + 5000000, 5000000)
                 hist, bin_edges = np.histogram(matching_cases['벌금'], bins=bins)
                 max_bin_index = np.argmax(hist)
                 max_bin_start = bin_edges[max_bin_index]
@@ -447,7 +473,7 @@ class HelloAPI(APIView):
             'data': [[f"{int(probation_bin_edges[i])}~{int(probation_bin_edges[i + 1])}년", int(probation_hist[i])] for i in range(len(probation_hist))]
             })
         # 벌금 데이터 생성
-        fine_bins = np.arange(0, matching_cases['벌금'].max() + 500000, 500000)
+        fine_bins = np.arange(0, matching_cases['벌금'].max() + 1000000,1000000)
         fine_hist, fine_bin_edges = np.histogram(matching_cases[matching_cases['벌금1'] == 1]['벌금'], bins=fine_bins)
         drilldown_data['series'].append({
             'name': '벌금',
@@ -462,9 +488,12 @@ class HelloAPI(APIView):
             result_string = f"{int(probation_bin_edges[max_bin_index])}~{int(probation_bin_edges[max_bin_index + 1])}년"
         else:
             max_bin_index = np.argmax(fine_hist)
-            result_string = f"{int(fine_bin_edges[max_bin_index])}~{int(fine_bin_edges[max_bin_index + 1])}원"
-
+            #result_string = f"{int(fine_bin_edges[max_bin_index])}~{int(fine_bin_edges[max_bin_index + 1])}원"
+            result_string = f"{int(max_bin_start)}~{int(max_bin_end)}원"
         try:
+            if prediction[0]=="폭행":
+                prediction[0]="살인"
+
             if judge:
                 response_data = {
                     "prediction": prediction[0],

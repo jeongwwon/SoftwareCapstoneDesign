@@ -15,6 +15,7 @@
 모든 혐의와 일치하는 사건명을 가진 판결문을 가져온 다음 시각화 및 형량 비교 분석을 수행한다. 
 
 ## 데모 영상
+![1](https://github.com/jeongwwon/SoftwareCapstoneDesign/assets/104192273/767afeda-ec6d-4dc4-b0e7-e16c952103f7)
 
 
 ## 결론

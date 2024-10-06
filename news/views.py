@@ -370,7 +370,7 @@ class HelloAPI(APIView):
                 (filtered_cases['사건개수'] <= len_results)
                 ]
         matching_cases=final_filtered_cases
-
+        
         def convert_sentence_to_numeric(value):
             if value == '무기징역':
                 return -1
@@ -387,6 +387,7 @@ class HelloAPI(APIView):
             matching_cases['벌금'] = matching_cases['벌금'].fillna(0)
 
             matching_cases = matching_cases[~((matching_cases['징역(개월)'] == 0) & (matching_cases['집행유예(개월)'] == 0) & (matching_cases['벌금'] == 0))]
+            #matching_cases = matching_cases[~(matching_cases['벌금']==0)]
 
             matching_cases['징역'] = matching_cases['징역(개월)'].apply(lambda x: 1 if float(x) > 0 else 0)
             matching_cases['집행유예'] = matching_cases['집행유예(개월)'].apply(lambda x: 1 if float(x) > 0 else 0)
@@ -408,7 +409,6 @@ class HelloAPI(APIView):
                 '벌금': fine_percentage
             }
             highest_percentage = max(percentages, key=percentages.get)
-
             matching_cases['징역(년)'] = matching_cases['징역(개월)'] / 12
             if highest_percentage == '징역':
                 if -2 in matching_cases['징역(개월)'].values:
@@ -424,7 +424,7 @@ class HelloAPI(APIView):
                 max_bin_start = bin_edges[max_bin_index]
                 max_bin_end = bin_edges[max_bin_index + 1]
                 max_bin_count = hist[max_bin_index]
-                max_bin_percentage = int((max_bin_count / total_count) * 100)
+                max_bin_percentage = int((max_bin_count / jail_count) * 100)
                 #result_string = f"{int(max_bin_start)}~{int(max_bin_end)}년"
             elif highest_percentage == '집행유예':
                 highest_probation_months = matching_cases['집행유예(개월)'].max()
@@ -435,18 +435,24 @@ class HelloAPI(APIView):
                 max_bin_start = bin_edges[max_bin_index]
                 max_bin_end = bin_edges[max_bin_index + 1]
                 max_bin_count = hist[max_bin_index]
-                max_bin_percentage = int((max_bin_count / total_count) * 100)
+                max_bin_percentage = int((max_bin_count / probation_count) * 100)
                 #result_string = f"{int(max_bin_start)}~{int(max_bin_end)}개월"
             else:
-                highest_fine = matching_cases['벌금'].max()
+                matching_cases2 = matching_cases[~(matching_cases['벌금']==0)]
+                highest_fine = matching_cases2['벌금'].max()
                 highest_sentence = f"{highest_fine}원"
-                bins = np.arange(0, matching_cases['벌금'].max() + 5000000, 5000000)
-                hist, bin_edges = np.histogram(matching_cases['벌금'], bins=bins)
+                max_fine = matching_cases2['벌금'].max()
+                bins = np.arange(0, max_fine + 10000000, 10000000)  # 천만 원 단위로 구간 설정
+                hist, bin_edges = np.histogram(matching_cases2['벌금'], bins=bins)
                 max_bin_index = np.argmax(hist)
                 max_bin_start = bin_edges[max_bin_index]
                 max_bin_end = bin_edges[max_bin_index + 1]
                 max_bin_count = hist[max_bin_index]
-                max_bin_percentage = int((max_bin_count / total_count) * 100)
+                max_bin_start_in_ten_million = max_bin_start / 10000000
+                max_bin_end_in_ten_million = max_bin_end / 10000000
+
+                max_bin_percentage = int((max_bin_count / fine_count) * 100)
+                result_string = f"{int(max_bin_start_in_ten_million)}~{int(max_bin_end_in_ten_million)}천만원"
                 #result_string = f"{int(max_bin_start)}~{int(max_bin_end)}원"
         except Exception as e:
             return Response({"error": f"판결 유형 처리 중 오류가 발생했습니다: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -473,23 +479,21 @@ class HelloAPI(APIView):
             'data': [[f"{int(probation_bin_edges[i])}~{int(probation_bin_edges[i + 1])}년", int(probation_hist[i])] for i in range(len(probation_hist))]
             })
         # 벌금 데이터 생성
-        fine_bins = np.arange(0, matching_cases['벌금'].max() + 1000000,1000000)
-        fine_hist, fine_bin_edges = np.histogram(matching_cases[matching_cases['벌금1'] == 1]['벌금'], bins=fine_bins)
+        fine_bins = np.arange(0, matching_cases['벌금'].max() / 1000000 + 1, 1)  # 백만 원 단위로 그룹화
+        fine_hist, fine_bin_edges = np.histogram(matching_cases[matching_cases['벌금1'] == 1]['벌금'] / 1000000, bins=fine_bins)
         drilldown_data['series'].append({
             'name': '벌금',
             'id': '벌금',
-            'data': [[f"{int(fine_bin_edges[i])}~{int(fine_bin_edges[i + 1])}원", int(fine_hist[i])] for i in range(len(fine_hist))]
+            'data': [
+                [
+                f"{int(fine_bin_edges[i])}~{int(fine_bin_edges[i + 1])}00만원" if fine_bin_edges[i + 1] < 10
+                else f"{int(fine_bin_edges[i])}~{int(fine_bin_edges[i + 1])}00만원",
+                int(fine_hist[i])
+                ]
+                for i in range(len(fine_hist))
+                if fine_hist[i] > 0  # 0이 아닌 값만 포함
+                ]
             })
-        if highest_percentage == '징역':
-            max_bin_index = np.argmax(jail_hist)
-            result_string = f"{int(jail_bin_edges[max_bin_index])}~{int(jail_bin_edges[max_bin_index + 1])}년"
-        elif highest_percentage == '집행유예':
-            max_bin_index = np.argmax(probation_hist)
-            result_string = f"{int(probation_bin_edges[max_bin_index])}~{int(probation_bin_edges[max_bin_index + 1])}년"
-        else:
-            max_bin_index = np.argmax(fine_hist)
-            #result_string = f"{int(fine_bin_edges[max_bin_index])}~{int(fine_bin_edges[max_bin_index + 1])}원"
-            result_string = f"{int(max_bin_start)}~{int(max_bin_end)}원"
         try:
             if prediction[0]=="폭행":
                 prediction[0]="살인"
@@ -534,13 +538,38 @@ class HelloAPI(APIView):
 
             import json
             from django.http import JsonResponse
-            selected_columns = matching_cases[['판례정보일련번호', '사건명', '사건번호', '선고일자', '선고', '법원명', '사건종류명', '판결유형', '전문', '판결', '분류','징역(개월)','집행유예(개월)','벌금']]            
-            def truncate_text(text, length=300):
+            matching_cases['징역(개월)'] = matching_cases['징역(개월)'].fillna(0)
+            matching_cases['집행유예(개월)'] = matching_cases['집행유예(개월)'].fillna(0)
+            matching_cases['벌금'] = matching_cases['벌금'].fillna(0)
+
+            def create_sentence(row):
+                parts = []
+                if pd.notna(row['징역(개월)']) and int(float(row['징역(개월)'])) > 0:
+                    parts.append(f"징역: {int(float(row['징역(개월)']))}개월")
+                if pd.notna(row['집행유예(개월)']) and int(float(row['집행유예(개월)'])) > 0:
+                    parts.append(f"집행유예: {int(float(row['집행유예(개월)']))}개월")
+                if pd.notna(row['벌금']) and int(row['벌금']) > 0:
+                    fine_in_ten_million = int(row['벌금']) // 10000000
+                    if fine_in_ten_million >= 1:
+                        parts.append(f"벌금: {int(fine_in_ten_million)}천만원")
+                    else:
+                        fine_in_million = int(row['벌금']) // 10000
+                        parts.append(f"벌금: {fine_in_million}만원")
+                return ', '.join(parts) if parts else '정보 없음'
+            matching_cases['형량'] = matching_cases.apply(create_sentence, axis=1)
+            matching_cases= matching_cases.sort_values(
+                    by=['징역(개월)', '집행유예(개월)', '벌금'],
+                    ascending=[False, False, False]  # 모든 열을 내림차순으로 정렬
+                    )
+            #selected_columns = sorted_matching_cases[['사건명','사건번호','판시사항','형량']]
+            matching_cases['판시사항'] = matching_cases['판시사항'].fillna('')
+            selected_columns = matching_cases[['사건명', '사건번호','판시사항','형량']]
+            def truncate_text(text, length=100):
                 if isinstance(text, str):
                     text = text.replace('\n', '')
                     return text[:length]
                 return text
-            selected_columns['전문'] = selected_columns['전문'].apply(truncate_text)
+            selected_columns['판시사항'] = selected_columns['판시사항'].apply(truncate_text)
             response_data2 = selected_columns.to_dict(orient='records')
             
             return Response({
